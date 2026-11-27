@@ -1,97 +1,88 @@
+"""
+auth.py - Week 9: register and log in from the terminal.
+
+Passwords are hashed with bcrypt. Users are kept in DATA/users.txt, one per line: username,hash
+
+Run it:  python auth.py
+"""
+
 from pathlib import Path
+
 import bcrypt
 
 USERS_FILE = Path(__file__).parent / "DATA" / "users.txt"
 
 
-def hash_password(plain_password: str) -> str:
-    """Turn a plain-text password into a salted bcrypt hash string."""
+def generate_hash(password):
+    """Turn a password into a bcrypt hash (returned as text)."""
+    byte_password = password.encode("utf-8")
     salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(plain_password.encode("utf-8"), salt)
+    hashed = bcrypt.hashpw(byte_password, salt)
     return hashed.decode("utf-8")
 
 
-def verify_password(plain_password: str, stored_hash: str) -> bool:
-    """Check a plain-text password against a stored bcrypt hash."""
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"),
-        stored_hash.encode("utf-8"),
-    )
+def is_valid_hash(password, hashed):
+    """True if the password matches the stored hash."""
+    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
 
 
-def load_users(filepath: Path = USERS_FILE) -> dict[str, str]:
-    """Load username -> password_hash from DATA/users.txt."""
-    users = {}
-    if not filepath.exists():
-        return users
-
-    for line in filepath.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or ":" not in line:
-            continue
-        username, password_hash = line.split(":", 1)
-        users[username.strip()] = password_hash.strip()
-    return users
-
-
-def register_user(username: str, plain_password: str, filepath: Path = USERS_FILE) -> bool:
-    """Register a new user if the username does not already exist."""
-    username = username.strip()
-    if not username or not plain_password:
-        print("Username and password cannot be empty.")
+def user_exists(username, path=USERS_FILE):
+    """True if this username is already in the file."""
+    if not path.exists():
         return False
-
-    users = load_users(filepath)
-    if username in users:
-        print(f"User '{username}' already exists.")
-        return False
-
-    filepath.parent.mkdir(parents=True, exist_ok=True)
-    hashed = hash_password(plain_password)
-    with filepath.open("a", encoding="utf-8") as file:
-        file.write(f"{username}:{hashed}\n")
-
-    print(f"Registered user '{username}' in {filepath}.")
-    return True
-
-
-def login_user(username: str, plain_password: str, filepath: Path = USERS_FILE) -> bool:
-    """Verify a user's login credentials."""
-    users = load_users(filepath)
-    stored_hash = users.get(username.strip())
-    if stored_hash is None:
-        print("Invalid username or password.")
-        return False
-
-    if verify_password(plain_password, stored_hash):
-        print(f"Welcome back, {username.strip()}!")
-        return True
-
-    print("Invalid username or password.")
+    with open(path, "r") as file:
+        for line in file:
+            stored_name, _ = line.strip().split(",", 1)
+            if stored_name.lower() == username.lower():
+                return True
     return False
 
 
-def main() -> None:
-    while True:
-        print("\n--- Week 9 Auth Menu ---")
-        print("1. Register")
-        print("2. Login")
-        print("3. Exit")
-        choice = input("Choose an option (1-3): ").strip()
+def register_user(username, password, path=USERS_FILE):
+    """Add a new user. Returns (True or False, a message)."""
+    username = username.strip()
+    if username == "" or "," in username:
+        return False, "Username cannot be empty or contain a comma."
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters."
+    if user_exists(username, path):
+        return False, "That username is already taken."
 
-        if choice == "1":
-            username = input("Enter new username: ").strip()
-            password = input("Enter password: ").strip()
-            register_user(username, password)
-        elif choice == "2":
-            username = input("Enter username: ").strip()
-            password = input("Enter password: ").strip()
-            login_user(username, password)
-        elif choice == "3":
+    path.parent.mkdir(exist_ok=True)
+    with open(path, "a") as file:
+        file.write(f"{username},{generate_hash(password)}\n")
+    return True, "Registered. You can log in now."
+
+
+def login_user(username, password, path=USERS_FILE):
+    """Check a username and password. Returns (True or False, a message)."""
+    if path.exists():
+        with open(path, "r") as file:
+            for line in file:
+                stored_name, stored_hash = line.strip().split(",", 1)
+                if stored_name.lower() == username.strip().lower():
+                    if is_valid_hash(password, stored_hash):
+                        return True, "Welcome back!"
+                    break
+    return False, "Wrong username or password."      # the same message for both problems, on purpose
+
+
+def main():
+    """A small menu to try it out."""
+    while True:
+        print("\n1. Register\n2. Log in\n3. Exit")
+        choice = input("> ")
+        if choice == "3":
             print("Goodbye!")
             break
-        else:
-            print("Invalid choice. Please enter 1, 2, or 3.")
+        if choice in ("1", "2"):
+            name = input("Username: ")
+            password = input("Password: ")
+            if choice == "1":
+                ok, message = register_user(name, password)
+            else:
+                ok, message = login_user(name, password)
+            print(("OK: " if ok else "NO: ") + message)
 
 
 if __name__ == "__main__":
